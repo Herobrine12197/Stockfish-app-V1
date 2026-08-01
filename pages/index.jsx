@@ -205,6 +205,61 @@ export default function Home() {
     setUploadedGames([])
   }
 
+  const downloadFile = (content, filename, mime = 'text/plain') => {
+    try {
+      const blob = new Blob([content], { type: mime })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      URL.revokeObjectURL(url)
+    } catch (e) {
+      console.error('Failed to download file', e)
+    }
+  }
+
+  const exportCurrentPGN = () => {
+    if (!pgn || pgn.trim() === '') return
+    // attempt to derive filename from game headers
+    let filename = 'exported_game.pgn'
+    try {
+      const chess = new Chess()
+      const ok = chess.load_pgn(pgn)
+      if (ok) {
+        const white = chess.header('White') || 'White'
+        const black = chess.header('Black') || 'Black'
+        filename = `${white}_vs_${black}.pgn`.replace(/[^a-zA-Z0-9_\-\.]/g, '_')
+      }
+    } catch (e) {}
+    downloadFile(pgn, filename, 'application/x-chess-pgn')
+  }
+
+  const exportAnalysisJSON = () => {
+    if (!game) return
+    // Build analysis per move: for each move, compute FEN after move and include analysisState[fen] if present
+    const chess = new Chess()
+    chess.load_pgn(pgn)
+    chess.reset()
+    const moves = chess.history({ verbose: false })
+    const perMove = []
+    for (let i = 0; i < moves.length; i++) {
+      chess.move(moves[i])
+      const f = chess.fen()
+      perMove.push({ move: moves[i], fen: f, analysis: analysisState[f] || [] })
+    }
+    const payload = {
+      meta: {
+        exported_at: new Date().toISOString(),
+        move_count: moves.length
+      },
+      perMove
+    }
+    downloadFile(JSON.stringify(payload, null, 2), 'analysis_export.json', 'application/json')
+  }
+
   const renderNotation = () => {
     if (!game) return null
     const moves = game.chess.history()
@@ -292,6 +347,8 @@ export default function Home() {
           <div style={{ marginTop: 8, display: 'flex', gap: 8 }}>
             <button onClick={onPrev} disabled={!game}>Prev</button>
             <button onClick={onNext} disabled={!game}>Next</button>
+            <button onClick={exportCurrentPGN} disabled={!pgn} style={{ marginLeft: '8px' }}>Download PGN</button>
+            <button onClick={exportAnalysisJSON} disabled={!game} style={{ marginLeft: '4px' }}>Download Analysis (JSON)</button>
           </div>
 
           <div style={{ marginTop: 12 }}>
